@@ -1,0 +1,383 @@
+---
+title: "Essais Hydroportail"
+author: "OFB - DR Bretagne"
+date: "`r format(Sys.time(), 'Le %d %B %Y')`"
+output:
+  bookdown::html_document2:
+    fig_caption: yes
+    tab_caption: yes
+    number_sections: yes
+    global_numbering: yes
+    toc: yes
+    toc_float:
+      toc_collapsed: yes
+      toc_depth: 2
+    code_folding: hide
+    css: "style.css"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r}
+library(tidyverse)
+library(hydroportail)
+library(hubeau)
+
+source(file = "00_fonctions.R")
+```
+
+
+
+```{r}
+# code_station <- "J012151001"
+code_station <- "J4712010"
+
+metadata <- hydroportail::get_meta_hydro(code = code_station, df = TRUE) %>% 
+  select(code:type,
+         code_h2,
+         commune = city,
+         latitude:crs,
+         date_debut = date_start#,
+        # date_fin = date_end
+        ) %>% 
+  mutate_at(vars(longitude:latitude), formater_grand_nb) %>% 
+  mutate_at(vars(date_debut), formater_date)
+
+QMNA <- hydroportail::get_stats_hydro(code = code_station,
+                                      stat = "QMNA")
+
+mois_debut_annee_hydro <- QMNA$meta$firsthydromonth %>% 
+  as.integer()
+
+nom_station <- QMNA$meta$entitylabel
+bv_station <- QMNA$meta$hydrowatershedarea
+
+#inspiré de l'aide de la fonction hydroportail::browse_sheet_hydro()
+code_h2 <- metadata$code_h2
+url <- paste0("https://webgr.inrae.fr/wp-content/uploads/fiches/",
+              code_h2,
+              "_fiche.png")
+```
+
+:::: {.colorbox data-latex=""}
+
+**Nom station : `r nom_station`**
+
+**Surface du bassin versant : `r bv_station` km²**
+
+**Longitude (Lambert 93) : `r metadata$longitude`**
+
+**Latitude (Lambert 93) : `r metadata$latitude`**
+
+**Code Hydroportail : `r metadata$code`**
+
+**Code Hydro 2 : `r metadata$code_h2`**
+
+**Début de la série : `r metadata$date_debut`**
+
+>[Accéder à la fiche station](`r url`) (si disponible.)
+
+::::
+
+$~$
+
+
+
+
+
+```{r}
+QmM <- hydroportail::get_ts_hydro(
+  code = code_station,
+  metric = "QmM", # average monthly steamflow
+  date_start = min(QMNA$seasons$start),
+  date_end   = max(QMNA$seasons$start)
+) %>%
+  mutate(
+    year = lubridate::year(t),
+    month = lubridate::month(t),
+    hydro_year = ifelse(month >= mois_debut_annee_hydro,
+                        year + 1,
+                        year)
+  )
+
+# QmM$hydro_year <- QmM$year + cumsum(QmM$month == QMNA$meta$firsthydromonth) - 1 # annee hydrologique
+
+QM_N <- QMNA$seasons %>% 
+  select(year,
+         value)
+
+# DT::datatable(QM_N)
+# plot(QMNA)
+# plot(QmM)
+
+# max_qmna <- max(QM_N$value, na.rm = TRUE)
+# min_qmna <- min(QM_N$value, na.rm = TRUE)
+
+annees_a_exclure <- QMNA$meta$automaticallyexcludedseasons %>% 
+  as.numeric()
+
+QmM <- QmM %>% 
+  filter(!hydro_year %in% annees_a_exclure)
+
+QM_N <- QM_N %>% 
+  filter(!year %in% annees_a_exclure)
+
+
+
+qmna5 <- QMNA$result$tabs$quantile %>% 
+  filter(p == 0.2) %>% 
+  pull(q)
+
+qmna2 <- QMNA$result$tabs$quantile %>% 
+  filter(p == 0.5) %>% 
+  pull(q)
+```
+
+# Toutes eaux
+
+## Module
+
+```{r}
+# module
+module_hydroportail <-  QmM %>% 
+  ungroup() %>% 
+  summarise(qa = mean(v)) %>% 
+  pull(qa) %>% 
+  round()
+```
+
+>Module : `r module_hydroportail` l/s
+
+## Débit moyen annuel quinquennal sec
+
+```{r}
+nb_mois_par_an <- QmM %>% 
+  group_by(year) %>% 
+  tally() %>% 
+  filter(n == 12)
+
+debit_moy_an <- QmM %>% 
+  filter(year %in% nb_mois_par_an$year) %>% 
+  group_by(year) %>% 
+    summarise(qa = mean(v, na.rm = TRUE))
+
+debit_moy_annuel_quinq_sec <- quantile(debit_moy_an$qa,
+                                       probs = 0.2) %>% 
+  round()
+```
+
+>Débit moyen annuel quinquennal sec : `r debit_moy_annuel_quinq_sec` l/s
+
+## Débits mensuels
+
+```{r}
+# stats mensuelles
+stats_debit_mensuel <- QmM %>% 
+  group_by(month) %>% 
+  summarise(q20 = quantile(v, probs = 0.2),
+            qmoy = mean(v, na.rm = T),
+            n = n())
+
+gg <- stats_debit_mensuel %>% 
+  select(-n) %>% 
+  pivot_longer(q20:qmoy) %>% 
+  mutate(name = ifelse(name == "q20",
+                       "Débit moyen mensuel quinquennal sec*",
+                       "Débit moyen mensuel interannuel")) %>% 
+  ggplot(aes(x = as.factor(month),
+             y = value,
+             fill = name)) +
+  geom_bar(stat = "identity",
+           position = "dodge") +
+  labs(x = "Mois",
+       y = "Débit en l/s",
+       fill = "",
+       caption = "*Quantile 20% non ajusté statistiquement") +
+  scale_y_continuous(labels = function(x) format(x,
+                                                 big.mark = " ",
+                                                 scientific = FALSE),
+                     sec.axis = sec_axis(~ ., breaks = unname(round(c(module_hydroportail, qmna5, debit_moy_annuel_quinq_sec))))) +
+  scale_fill_manual(values = c("#56B4E9", "#E69F00")) +
+  templatesOFB::theme_ofb() +
+  theme(legend.position = "bottom") +
+  geom_hline(yintercept = module_hydroportail,
+             linetype = "dotted") +
+  geom_hline(yintercept = qmna5,
+             linetype = "dashed") +
+  geom_hline(yintercept = debit_moy_annuel_quinq_sec,
+             linetype = "dotdash")
+  
+  
+
+gg
+```
+
+## Débits classés
+
+```{r}
+# -----------------------------------------
+# débits journaliers de crue
+# -----------------------------------------
+qj <- hydroportail::get_stats_hydro(code = "J012151001",
+                                      stat = "CRUCAL_J")
+
+# Ca c'est bon
+qja5 <- qj$result$tabs$quantile %>% 
+  filter(p == 0.2) %>% 
+  select(-T,
+         -p,
+         -u,
+         -quality)
+
+debit_crue_journaliere_biennale <- qj$result$tabs$quantile %>% 
+  filter(p == 0.5) %>% 
+  select(-T,
+         -p,
+         -u,
+         -quality)
+
+# -----------------------------------------
+# débits journaliers classés
+# -----------------------------------------
+
+debits_classes <- qj$result$tabs$quantile %>% 
+  mutate_at(vars(q:quality), round) %>% 
+  select(-`T`,
+         -u,
+         -quality)
+```
+
+
+
+```{r}
+# tableau pour figurer certains quantiles
+ma_grille <- debits_classes %>% 
+  filter(p %in% c(0.05, 0.5, 0.95)) %>% 
+  mutate(p = 1 - p)
+
+# graphique
+debits_classes %>% 
+  ggplot(aes(x = (1 - p),
+             y = q)) +
+  geom_ribbon(aes(ymin = IC.low,
+                  ymax = IC.high),
+              alpha = 0.2) +
+  geom_line(col = "#56B4E9",
+              size = 0.75) +  
+  geom_segment(data = ma_grille,
+               aes(x = p,
+                   y = -Inf,
+                   xend = p,
+                   yend = q),
+               linetype = "dashed",
+               size = 0.4) +
+    geom_segment(data = ma_grille,
+                 aes(x = -Inf,
+                     y = q,
+                     xend = p,
+                     yend = q),
+               linetype = "dashed",
+               size = 0.4) +
+  labs(title = "Courbe des débits journaliers classés",
+       x = "Fréquence de non dépassement",
+       y = "Débit (l/s)") +
+  scale_x_continuous(labels = scales::percent,
+                     breaks = scales::breaks_pretty(n = 10)) +
+  scale_y_continuous(labels = function(x) format(x,
+                                                 big.mark = " ",
+                                                 scientific = FALSE),
+                     limits = c(0, NA),
+                     breaks = scales::breaks_pretty(n = 10)) +
+  templatesOFB::theme_ofb()
+```
+
+
+```{r}
+debits_classes %>% 
+  mutate_at(vars(q:IC.high), function(x) format(x,
+                                                big.mark = " ",
+                                                scientific = FALSE)) %>% 
+  # rename(`Débit` = q,
+  #        `Fréquence de non dépassement` = p,
+  #        `Borne inférieure de l'IC` = IC.low,
+  #        `Borne supérieurs de l'IC` = IC.high) %>% 
+DT::datatable(rownames = FALSE,
+              colnames = c("Fréquence de non dépassement",  "Débit", "Borne inférieure de l'IC", "Borne supérieure de l'IC"),
+              options = list(
+                columnDefs = list(list(className = 'dt-center', targets = 0:3))
+            )) %>% 
+  DT::formatPercentage(1, 2)
+```
+
+# Basses eaux
+
+
+
+>QMNA5 : `r round(qmna5)` l/s
+
+
+>QMNA2 : `r round(qmna2)` l/s
+
+
+# Essais à partir de Hub'eau
+
+```{r}
+q_journaliers <- get_hydrometrie_obs_elab(
+  list(code_entite = code_station,
+    #   date_debut_obs_elab = format(Sys.Date() -30, "%Y-%m-%d"),
+       grandeur_hydro_elab = "QmJ")) %>% 
+    mutate(annee = lubridate::ymd(date_obs_elab),
+           annee = lubridate::year(annee))
+
+debits_caract2 <- q_journaliers %>% 
+  pull(resultat_obs_elab) %>% 
+  quantile(probs = seq(0, 1, 0.01)) %>% 
+  as.data.frame() %>% 
+  rownames_to_column("freq") %>% 
+  mutate(freq = str_replace(freq, "%", ""),
+         freq = as.integer(freq)) %>% 
+  set_names(c("freq", "debit_journalier_classe"))
+
+ggplot(data = debits_caract2,
+       aes(x = (100 - freq),
+           y = debit_journalier_classe)) +
+  geom_line(col = "#56B4E9",
+              size = 0.75) +
+  scale_x_continuous(labels = scales::percent_format (scale = 1),
+                     breaks = scales::breaks_pretty(n = 10)) +
+  scale_y_continuous(labels = function(x) format(x,
+                                                 big.mark = " ",
+                                                 scientific = FALSE),
+                     limits = c(0, NA),
+                     breaks = scales::breaks_pretty(n = 10)) +
+  templatesOFB::theme_ofb() +
+  labs(x = "Fréquence de dépassement",
+       y = "Débit moyen journalier (l/s)",
+       title = "Débits classés")
+```
+
+```{r}
+mes_annees <- q_journaliers %>% 
+  group_by(annee) %>%
+  tally() %>% 
+  filter(n > 364) %>% 
+  pull(annee)
+
+q_moy_an <- q_journaliers %>% 
+  filter(annee %in% mes_annees) %>% 
+  group_by(annee) %>% 
+    summarise(q_moy_an = mean(resultat_obs_elab, na.rm = TRUE))
+
+module_api <- mean(q_moy_an$q_moy_an)
+```
+
+>Module calculé à partir des données collectées sur l'API Hydrométrie : `r round(module_api)` l/s
+
+Obtenu à partir des débits journaliers QmJ.
+
+
+
+
+

@@ -1,0 +1,51 @@
+---
+title: "Essais Hydroportail"
+author: "OFB - DR Bretagne"
+date: "`r format(Sys.time(), 'Le %d %B %Y')`"
+output:
+  bookdown::html_document2:
+    fig_caption: yes
+    tab_caption: yes
+    number_sections: yes
+    global_numbering: yes
+    toc: yes
+    toc_float:
+      toc_collapsed: yes
+      toc_depth: 2
+    code_folding: hide
+    css: "style.css"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r}
+library(tidyverse)
+library(hydroportail)
+library(hubeau)
+library(flextable)
+
+source(file = "00_fonctions.R")
+```
+
+
+
+```{r}
+# code_station <- "J012151001"
+code_station <- "J4712010"
+```
+
+# Données collectées avec le package {hydroportail}
+
+```{r}
+synthese <- hydroportail::get_summary_hydro(code = code_station)
+```
+
+## Débits extrêmes
+
+
+```{r}
+synthese$known_extremes %>% 
+  flextable()
+```
