@@ -1,5 +1,5 @@
 ---
-title: "Essais Hydroportail"
+title: "Essais Hydroportail : méthodo"
 author: "OFB - DR Bretagne"
 date: "`r format(Sys.time(), 'Le %d %B %Y')`"
 output:
@@ -38,6 +38,33 @@ code_station <- "J4712010"
 
 # Données collectées avec le package {hydroportail}
 
+## La station
+
+```{r}
+metadata <- hydroportail::get_meta_hydro(code = code_station, df = TRUE)
+```
+
+:::: {.colorbox data-latex=""}
+
+**Nom station : `r metadata$label`**
+
+**Surface du bassin versant topographique : `r metadata$area_topo %>% formater_grand_nb()` km²**
+
+**Longitude (Lambert 93) : `r metadata$longitude %>% formater_grand_nb()`**
+
+**Latitude (Lambert 93) : `r metadata$latitude %>% formater_grand_nb()`**
+
+::::
+
+$~$
+
+On utilise ici la fonction `get_summary_hydro()` qui, d'après sa documentation, renvoie une liste :
+
+- known_extremes	[list] known extremes, calculated from the most valid data set
+- mean_annual_discharges	[list] interannual averages, calculated from the most valid QmM (monthly averageflows)
+- mean_annual_discharges_reference_values	[list] characteristic flows, calculated from the most valid QmJ (average daily flows)
+- classified_flow_rates	[list] classified flows, calculated from the most valid QmJ (average daily flows)
+
 ```{r}
 synthese <- hydroportail::get_summary_hydro(code = code_station)
 ```
@@ -47,5 +74,94 @@ synthese <- hydroportail::get_summary_hydro(code = code_station)
 
 ```{r}
 synthese$known_extremes %>% 
-  flextable()
+  rownames_to_column("Débit en l/s") %>% 
+  mutate_at(vars(ends_with("Date")), formater_date_heure) %>%
+  mutate_at(vars(ends_with("Value")), formater_grand_nb) %>%
+  formater_flex()
 ```
+
+## Débit moyen annuel
+
+```{r}
+debit_moyen_mensuel_interannuel_meta <- synthese$mean_annual_discharges$meta %>% 
+  map(.f = as.character) %>% 
+  unlist() %>% 
+  as.data.frame() %>% 
+  rownames_to_column("Variable")
+
+formater_flex(debit_moyen_mensuel_interannuel_meta)
+  
+```
+
+
+## Débit moyen mensuel
+
+```{r}
+debit_moyen_mensuel_interannuel <- synthese$mean_annual_discharges$tab %>% 
+  as.data.frame() %>% 
+  rownames_to_column("month") %>% 
+  unnest() %>% 
+  rename(mean_flow_l_s = "means",
+         mean_sp_flow_l_s_km2 = qspMeans,
+         mean_runoff_mm = depthRunoffMeans) %>% 
+  mutate_at(vars(mean_sp_flow_l_s_km2:mean_runoff_mm), round, digits = 2) %>% 
+  mutate(mean_flow_l_s = formater_grand_nb(mean_flow_l_s))
+
+formater_flex(debit_moyen_mensuel_interannuel)
+```
+
+## Débit moyen annuel : valeurs de référence
+
+```{r}
+debit_moyen_annuel_ref <- synthese$mean_annual_discharges_reference_values %>% 
+  unlist() %>% 
+  as.data.frame() %>% 
+  set_names("Valeur") %>% 
+  rownames_to_column("Variable") %>% 
+  mutate(Valeur = formater_grand_nb(Valeur))
+
+formater_flex(debit_moyen_annuel_ref)
+```
+
+Second tableau
+
+```{r}
+debits_classes_caracteristiques <- synthese$classified_flow_rates %>% 
+  .[1:3] %>% 
+  unlist() %>% 
+  as.data.frame() %>% 
+  set_names("Valeur") %>% 
+  rownames_to_column("Variable") %>% 
+  mutate(Valeur = formater_grand_nb(Valeur))
+
+formater_flex(debits_classes_caracteristiques)
+```
+
+## Débit moyen annuel : quantiles
+
+```{r}
+debits_classes_quantiles <- synthese$classified_flow_rates$quantiles %>% 
+  mutate(v = formater_grand_nb(v))
+
+df1 <- debits_classes_quantiles %>% 
+  slice(1:(nrow(debits_classes_quantiles)/2))
+
+df2 <- debits_classes_quantiles %>% 
+  slice((1 + nrow(debits_classes_quantiles)/2): nrow(debits_classes_quantiles)) %>% 
+  rename(f1 = f,
+         v1 = v)
+
+df <- cbind(df1, df2) 
+
+formater_flex(df) %>% 
+  vline(j = 2) %>% 
+  set_header_labels(
+  values = list(
+    f = "f",
+    v = "q",
+    f1 = "f",
+    v1 = "q"
+  )) 
+  
+```
+
