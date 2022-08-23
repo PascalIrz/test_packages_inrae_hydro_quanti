@@ -1,5 +1,6 @@
 ---
-title: "Essais Hydroportail : méthodo"
+title: "Essais Hydroportail"
+subtitle: "Tests méthodologiques"
 author: "OFB - DR Bretagne"
 date: "`r format(Sys.time(), 'Le %d %B %Y')`"
 output:
@@ -39,6 +40,8 @@ code_station <- "J4712010"
 # Données collectées avec le package {hydroportail}
 
 ## La station
+
+Quelques informations sur la station sont obtenues par la fonction `hydroportail::get_meta_hydro()`.
 
 ```{r}
 metadata <- hydroportail::get_meta_hydro(code = code_station, df = TRUE)
@@ -83,7 +86,15 @@ synthese$known_extremes %>%
 ## Débit moyen annuel
 
 ```{r}
-debit_moyen_mensuel_interannuel_meta <- synthese$mean_annual_discharges$meta %>% 
+debit_moyen_mensuel_interannuel_meta <- synthese$mean_annual_discharges$meta
+
+debit_moyen_mensuel_interannuel_meta$start <- formater_date(debit_moyen_mensuel_interannuel_meta$start)
+debit_moyen_mensuel_interannuel_meta$end <- formater_date(debit_moyen_mensuel_interannuel_meta$end)
+debit_moyen_mensuel_interannuel_meta$last_computation <- formater_date_heure(debit_moyen_mensuel_interannuel_meta$last_computation)
+debit_moyen_mensuel_interannuel_meta$qspAnnual <- round(debit_moyen_mensuel_interannuel_meta$qspAnnual, 2)
+debit_moyen_mensuel_interannuel_meta$depthRunoffAnnual <- round(debit_moyen_mensuel_interannuel_meta$depthRunoffAnnual, 2)
+
+debit_moyen_mensuel_interannuel_meta <- debit_moyen_mensuel_interannuel_meta %>% 
   map(.f = as.character) %>% 
   unlist() %>% 
   as.data.frame() %>% 
