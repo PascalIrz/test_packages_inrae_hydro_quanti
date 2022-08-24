@@ -1,0 +1,319 @@
+---
+title: "Essais Hydroportail"
+subtitle: "Comparaisons méthodologiques"
+author: "OFB - DR Bretagne"
+date: "`r format(Sys.time(), 'Le %d %B %Y')`"
+output:
+  bookdown::html_document2:
+    fig_caption: yes
+    tab_caption: yes
+    number_sections: yes
+    global_numbering: yes
+    toc: yes
+    toc_float:
+      toc_collapsed: yes
+      toc_depth: 2
+    code_folding: hide
+    css: "style.css"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r}
+library(tidyverse)
+library(hydroportail)
+library(hubeau)
+library(flextable)
+
+source(file = "00_fonctions.R")
+```
+
+
+
+```{r}
+code_station_elle <- "J4712010"
+module_hydroportail_elle <- 2790
+qmna5_hydroportail_elle <- 184
+q2_hydroportail_elle <- 19703
+qmaqs_hydroportail_elle <- 2094
+
+code_station_couesnon <- "J012151001"
+module_hydroportail_couesnon <- 4840
+qmna5_hydroportail_couesnon <- 417
+q2_hydroportail_couesnon <- 29283
+qmaqs_hydroportail_couesnon <- 2933
+
+code_station <- code_station_elle
+```
+
+
+Quelques informations sur la station sont obtenues par la fonction `hydroportail::get_meta_hydro()`.
+
+```{r}
+metadata <- hydroportail::get_meta_hydro(code = code_station, df = TRUE)
+```
+
+:::: {.colorbox data-latex=""}
+
+**Nom station : `r metadata$label`**
+
+**Code Hydroportail : `r metadata$code`**
+
+**Code Hydro 2 : `r metadata$code_h2`**
+
+**Surface du bassin versant topographique : `r metadata$area_topo %>% formater_grand_nb()` km²**
+
+**Longitude (Lambert 93) : `r metadata$longitude %>% formater_grand_nb()`**
+
+**Latitude (Lambert 93) : `r metadata$latitude %>% formater_grand_nb()`**
+
+::::
+
+$~$
+
+# Données du site Hydroportail
+
+Captures d'écran au 24/08/2022.
+
+## Module
+
+![](../assets/module_elle.PNG)
+
+>**Le module indiqué est `r module_hydroportail_elle %>% formater_grand_nb()` l/s.**
+
+## QMNA5
+
+![](../assets/qmna_elle.PNG)
+
+>**Le QMNA5 indiqué est `r qmna5_hydroportail_elle %>% formater_grand_nb()` l/s.**
+
+## Débit moyen annuel quinquennal sec
+
+![](../assets/module_elle.PNG)
+
+>**Le débit moyen annuel quinquennal sec est `r qmaqs_hydroportail_elle %>% formater_grand_nb()` l/s.**
+
+## Débit de crue journalière biennale
+
+![](../assets/q2_elle.PNG)
+
+>**Le débit de crue journalière biennale est `r q2_hydroportail_elle %>% formater_grand_nb()` l/s.**
+
+# Requêtage de l'API Hub'eau « Hydrométrie »
+
+L'API ne proposant pas directement la collecte du module et du QMNA5, ceux-ci doivent être calculés sur la base, respectivement, des débits moyens journaliers et des débits moyens mensuels. Il n'y a donc pas ici d'ajustement de loi statistique mais de simples calculs de moyennes (module) et de quantile (QMNA5).
+
+Les données sont collectées au moyen de la fonction `get_hydrometrie_obs_elab()` du [package R {hubeau}](https://inrae.github.io/hubeau/).
+
+## Module
+
+Le module est calculé ainsi :
+
+- collecte des débits moyens journaliers
+- élimination des années incomplètes
+- calcul, pour chaque année, de la moyenne des débits journaliers
+- calcul de la moyenne des moyennes annuelles
+
+```{r}
+q_journaliers <- get_hydrometrie_obs_elab(
+  list(code_entite = code_station,
+       grandeur_hydro_elab = "QmJ")) %>% 
+    mutate(annee = lubridate::ymd(date_obs_elab),
+           annee = lubridate::year(annee))
+```
+
+
+```{r}
+# Identification des années complètes
+annees_completes <- q_journaliers %>% 
+  group_by(annee) %>%
+  tally() %>% 
+  filter(n > 364) %>% 
+  pull(annee)
+
+# sélection des années complètes
+q_moy_an <- q_journaliers %>% 
+  filter(annee %in% annees_completes) %>% 
+  group_by(annee) %>% 
+    summarise(q_moy_an = mean(resultat_obs_elab, na.rm = TRUE))
+
+# calcul du module
+module_api <- mean(q_moy_an$q_moy_an)
+```
+
+>**Module calculé à partir de l'API Hydrométrie : `r round(module_api) %>% formater_grand_nb()` l/s**
+
+Sur un total de `r nrow(q_moy_an)` années de données avec des séries complètes.
+
+## QMNA5
+
+Le QMNA5 est calculé ainsi :
+
+- collecte des débits moyens mensuels
+- élimination des années incomplètes
+- sélection, pour chaque année, du mois avec le plus faible QmM
+- calcul du quantile 20% (1/5) de ces valeurs de débits
+
+```{r}
+q_mensuel <- get_hydrometrie_obs_elab(
+  list(code_entite = code_station,
+       grandeur_hydro_elab = "QmM")) %>% 
+    mutate(annee = lubridate::ymd(date_obs_elab),
+           annee = lubridate::year(annee))
+```
+
+```{r}
+# pour chaque année, collecte du mini du débit mensuel
+q_mensuel_mini_annuel <- q_mensuel %>% 
+  filter(annee %in% annees_completes) %>% 
+  group_by(annee) %>% 
+    filter(resultat_obs_elab == min(resultat_obs_elab))
+
+# pourcentile 20% des débits ci-dessus
+qmna5_api <- q_mensuel_mini_annuel %>% 
+  pull(resultat_obs_elab) %>% 
+  quantile(probs = c(0.2))
+```
+
+
+>**QMNA5 obtenu à partir de l'API Hydrométrie : `r round(qmna5_api) %>% formater_grand_nb()` l/s**
+
+Sur un total de `r nrow(q_mensuel_mini_annuel)` années de données avec des séries complètes.
+
+## Débit moyen annuel quinquennal sec
+
+```{r}
+qmaqs_api <- quantile(q_moy_an$q_moy_an, probs = 0.2) %>% 
+  unname() %>% 
+  round()
+```
+
+>**Débit moyen annuel quinquennal sec obtenu à partir de l'API Hydrométrie : `r qmaqs_api %>% formater_grand_nb()` l/s**
+
+Sur un total de `r nrow(q_moy_an)` années de données avec des séries complètes.
+
+## Débit de crue journalière biennale
+
+```{r}
+q2 <- q_journaliers %>% 
+  filter(annee %in% annees_completes) %>% 
+  group_by(annee) %>% 
+    summarise(q_max_an = max(resultat_obs_elab, na.rm = TRUE)) %>% 
+  ungroup()
+
+q2_api <- q2 %>% 
+  summarise(qcjb = median(q_max_an)) %>% 
+  pull(qcjb)
+```
+
+>**Débit de crue journalière biennale à partir de l'API Hydrométrie : `r round(q2_api) %>% formater_grand_nb()` l/s**
+
+Sur un total de `r nrow(q2)` années de données avec des séries complètes.
+
+
+# Collecte avec le package R {hydroportail}
+
+## Module
+
+Pour obtenir le module, les étapes sont :
+
+- collecte des débits annuels "QJ_ANNUAL"
+- extraction des la moyenne des débits dans le `slot` *descriptivestats*. 
+
+```{r}
+qj_annual <- hydroportail::get_stats_hydro(
+  code = code_station,
+  stat = "QJ_ANNUAL")
+
+module_package_hp <- qj_annual$descriptivestats$mean
+```
+
+>**Module obtenu avec le package {hydroportail} : `r round(module_package_hp) %>% formater_grand_nb()` l/s**
+
+Sur un total de `r qj_annual$meta$numextractedseasonvalues` années de données validées.
+
+
+## QMNA5
+
+Pour obtenir le QMNA5, les étapes sont :
+
+- collecte des QMNA
+- extraction de la table des quantiles ajustés sur une loi statistique
+- sélection de la valeur de débit pour le quantile 20%
+
+```{r}
+qmna_package_hp <- hydroportail::get_stats_hydro(code = code_station,
+                                                 stat = "QMNA")
+
+qmna5_package_hp <- qmna_package_hp$result$tabs$quantile %>% 
+  filter(p == 0.2) %>% 
+  pull(q)
+```
+
+
+
+>**QMNA5 obtenu avec le package {hydroportail} : `r round(qmna5_package_hp) %>% formater_grand_nb()` l/s**
+
+Sur un total de `r nrow(qmna_package_hp$result$tabs$observations)` années de données avec des séries complètes.
+
+## Débit moyen annuel quinquennal sec
+
+```{r}
+qmaqs_package_hp <- qj_annual$result$tabs$quantile %>% 
+  filter(p == 0.2) %>% 
+  pull(q)
+```
+
+>**Débit moyen annuel quinquennal sec obtenu avec le package {hydroportail} : `r qmaqs_package_hp %>% round() %>%  formater_grand_nb()` l/s**
+
+Sur un total de `r qj_annual$meta$numextractedseasonvalues` années de données.
+
+## Débit de crue journalière biennale
+
+```{r}
+q_crue <- hydroportail::get_stats_hydro(
+  code = code_station,
+  stat = "CRUCAL_J")
+
+# q_crue_filtre <- q_crue$seasons %>% 
+#   filter(!year %in% q_crue$meta$automaticallyexcludedseasons,
+#          !year %in% q_crue$meta$manuallyexcludedseasons)
+
+q2_package_hp <- q_crue$result$tabs$quantile %>%  
+  filter(p == 0.5) %>% 
+  pull(q)
+```
+
+>**Débit de crue journalière biennale avec le package {hydroportail} : `r round(q2_package_hp) %>% formater_grand_nb()` l/s**
+
+Sur un total de `r q_crue$meta$numextractedseasonvalues` années de données.
+
+# Résumé
+
+```{r}
+df <- data.frame(
+  Source = c("Site hydroportail",
+             "Requêtage de l’API Hub’eau « Hydrométrie »",
+             "package R {hydroportail}"),
+  Module = c(module_hydroportail_elle,
+             module_api,
+             module_package_hp),
+  Q_moy_an_quinq_sec = c(qmaqs_hydroportail_elle,
+                         qmaqs_api,
+                         qmaqs_package_hp),
+  QMNA5 = c(qmna5_hydroportail_elle,
+            qmna5_api,
+            qmna5_package_hp),
+  Q2 = c(q2_hydroportail_elle,
+         q2_api,
+         q2_package_hp)
+) %>% 
+  mutate_if(is.numeric, round) %>% 
+  mutate_if(is.numeric, formater_grand_nb)
+
+df %>% 
+  formater_flex
+```
+
