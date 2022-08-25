@@ -1,0 +1,113 @@
+---
+title: "Essais Hydroportail"
+subtitle: "Questions à OD"
+author: "OFB - DR Bretagne"
+date: "`r format(Sys.time(), 'Le %d %B %Y')`"
+output:
+  bookdown::html_document2:
+    fig_caption: yes
+    tab_caption: yes
+    number_sections: yes
+    global_numbering: yes
+    toc: yes
+    toc_float:
+      toc_collapsed: yes
+      toc_depth: 2
+    code_folding: hide
+    css: "style.css"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r}
+library(tidyverse)
+library(hydroportail)
+library(hubeau)
+
+source(file = "00_fonctions.R")
+```
+
+
+
+```{r}
+code_station_elle <- "J4712010"
+module_hydroportail_elle <- 2800
+qmna5_hydroportail_elle <- 184
+
+code_station_couesnon <- "J012151001"
+module_hydroportail_couesnon <- 4840
+qmna5_hydroportail_couesnon <- 417
+
+code_station <- code_station_elle
+```
+
+On cherche ici à collecter les débits journaliers classés pour les fréquences de dépassement 10, 80, 90 et 95%. 
+
+# débits classés
+
+## Données hydroportail
+
+On extrait directement les q10 et q90 depuis les stats descriptives disponibles quand on charge les stats sur les débits journaliers avec `get_stats_hydro(..., stat = "QJ_ANNUAL")`.
+
+
+```{r}
+qj_hydroportail <- get_stats_hydro(code = code_station,
+                                   stat = "QJ_ANNUAL")
+
+q10_hydroportail <- qj_hydroportail$descriptivestats["q10"] %>% unlist()
+q90_hydroportail <- qj_hydroportail$descriptivestats["q90"] %>% unlist()
+
+q10_hydroportail
+q90_hydroportail
+```
+
+En revanche les q80 et q95 ne sont pas proposés.
+
+## Données API Hydrométrie
+
+On charge donc les données de débits journaliers depuis l'API Hub'eau "Hydrométrie". Pour exclure d'éventuelles périodes qui ne sont pas qualifiées comme "Bonnes", on doit déterminer les années hydrologiques des observations. Le premier mois de l'année hydrologique est disponible dans les données déjà chargées avec le package `{hydroportail}`.
+
+
+```{r}
+mois_debut_annee_hydro <- qj_hydroportail$meta$firsthydromonth %>% 
+  as.integer()
+```
+
+
+```{r}
+qj_hubeau <- hubeau::get_hydrometrie_obs_elab(
+  list(code_entite = code_station,
+       grandeur_hydro_elab = "QmJ")) %>% 
+    mutate(date_obs_elab = lubridate::ymd(date_obs_elab),
+           annee = lubridate::year(date_obs_elab),
+           mois = lubridate::month(date_obs_elab),
+           annee_hydro = ifelse(mois < mois_debut_annee_hydro,
+                                annee - 1,
+                                annee))
+```
+
+
+```{r}
+qj_hubeau %>% pull(libelle_qualification) %>% table()
+
+q_classes_hubeau <- qj_hubeau %>% 
+  filter(libelle_qualification == "Bonne") %>% 
+  pull(resultat_obs_elab) %>% 
+  quantile(probs = c(0.1, 0.8, 0.9, 0.95))
+```
+
+```{r}
+comparaison <- q_classes_hubeau %>%  
+  cbind(c(q10_hydroportail, NA, q90_hydroportail, NA)) %>% 
+  as.data.frame() %>% 
+  rownames_to_column() %>% 
+  set_names(c("freq", "hubeau", "hydroportail")) %>% 
+  mutate(hubeau = round(hubeau)) %>% 
+  mutate_at(vars(hubeau:hydroportail), formater_grand_nb)
+
+comparaison %>% 
+  formater_flex()
+```
+
