@@ -19,3 +19,47 @@ formater_flex <- function(df)
     align(align = "center", part = "all")
 }
 
+###################################
+get_module <- function(code)
+  
+{
+  module <- hydroportail::get_stats_hydro(
+    code = code,
+    stat = "QJ_ANNUAL") %>% 
+    .$descriptivestats %>% 
+    .$mean
+  
+  module
+  
+}
+
+get_qmna5 <- function(code)
+  
+  {
+  qmna5 <- hydroportail::get_stats_hydro(code = code,
+                                         stat = "QMNA") %>% 
+    .$result %>% 
+    .$tabs %>% 
+    .$quantile %>% 
+    filter(p == 0.2) %>% 
+    pull(q)
+  
+  qmna5
+  
+  }
+
+get_qmaqs <- function(code)
+  
+{
+  qmaqs <- hydroportail::get_stats_hydro(
+    code = code,
+    stat = "QJ_ANNUAL") %>% 
+    .$result %>% 
+    .$tabs %>% 
+    .$quantile %>% 
+    filter(p == 0.2) %>% 
+    pull(q)
+  
+  qmaqs
+}
+
