@@ -314,6 +314,10 @@ df <- data.frame(
   mutate_if(is.numeric, formater_grand_nb)
 
 df %>% 
-  formater_flex
+  formater_flex %>% 
+  add_header_row(values = c("", "Toutes eaux", "Basses eaux", "Hautes eaux"),
+                 colwidths = c(1, 2, 1, 1)
+)
+  
 ```
 

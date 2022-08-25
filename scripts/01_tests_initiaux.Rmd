@@ -112,9 +112,9 @@ QmM <- hydroportail::get_ts_hydro(
 
 # QmM$hydro_year <- QmM$year + cumsum(QmM$month == QMNA$meta$firsthydromonth) - 1 # annee hydrologique
 
-QM_N <- QMNA$seasons %>% 
-  select(year,
-         value)
+# QM_N <- QMNA$seasons %>% 
+#   select(year,
+#          value)
 
 # DT::datatable(QM_N)
 # plot(QMNA)
@@ -129,8 +129,8 @@ annees_a_exclure <- QMNA$meta$automaticallyexcludedseasons %>%
 QmM <- QmM %>% 
   filter(!hydro_year %in% annees_a_exclure)
 
-QM_N <- QM_N %>% 
-  filter(!year %in% annees_a_exclure)
+# QM_N <- QM_N %>% 
+#   filter(!year %in% annees_a_exclure)
 
 
 
@@ -246,77 +246,77 @@ debit_crue_journaliere_biennale <- qj$result$tabs$quantile %>%
          -u,
          -quality)
 
-# -----------------------------------------
-# débits journaliers classés
-# -----------------------------------------
-
-debits_classes <- qj$result$tabs$quantile %>% 
-  mutate_at(vars(q:quality), round) %>% 
-  select(-`T`,
-         -u,
-         -quality)
+# # -----------------------------------------
+# # débits journaliers classés
+# # -----------------------------------------
+# 
+# debits_classes <- qj$result$tabs$quantile %>% 
+#   mutate_at(vars(q:quality), round) %>% 
+#   select(-`T`,
+#          -u,
+#          -quality)
 ```
 
 
 
 ```{r}
 # tableau pour figurer certains quantiles
-ma_grille <- debits_classes %>% 
-  filter(p %in% c(0.05, 0.5, 0.95)) %>% 
-  mutate(p = 1 - p)
+# ma_grille <- debits_classes %>% 
+#   filter(p %in% c(0.05, 0.5, 0.95)) %>% 
+#   mutate(p = 1 - p)
 
 # graphique
-debits_classes %>% 
-  ggplot(aes(x = (1 - p),
-             y = q)) +
-  geom_ribbon(aes(ymin = IC.low,
-                  ymax = IC.high),
-              alpha = 0.2) +
-  geom_line(col = "#56B4E9",
-              size = 0.75) +  
-  geom_segment(data = ma_grille,
-               aes(x = p,
-                   y = -Inf,
-                   xend = p,
-                   yend = q),
-               linetype = "dashed",
-               size = 0.4) +
-    geom_segment(data = ma_grille,
-                 aes(x = -Inf,
-                     y = q,
-                     xend = p,
-                     yend = q),
-               linetype = "dashed",
-               size = 0.4) +
-  labs(title = "Courbe des débits journaliers classés",
-       x = "Fréquence de non dépassement",
-       y = "Débit (l/s)") +
-  scale_x_continuous(labels = scales::percent,
-                     breaks = scales::breaks_pretty(n = 10)) +
-  scale_y_continuous(labels = function(x) format(x,
-                                                 big.mark = " ",
-                                                 scientific = FALSE),
-                     limits = c(0, NA),
-                     breaks = scales::breaks_pretty(n = 10)) +
-  templatesOFB::theme_ofb()
+# debits_classes %>% 
+#   ggplot(aes(x = (1 - p),
+#              y = q)) +
+#   geom_ribbon(aes(ymin = IC.low,
+#                   ymax = IC.high),
+#               alpha = 0.2) +
+#   geom_line(col = "#56B4E9",
+#               size = 0.75) +  
+#   geom_segment(data = ma_grille,
+#                aes(x = p,
+#                    y = -Inf,
+#                    xend = p,
+#                    yend = q),
+#                linetype = "dashed",
+#                size = 0.4) +
+#     geom_segment(data = ma_grille,
+#                  aes(x = -Inf,
+#                      y = q,
+#                      xend = p,
+#                      yend = q),
+#                linetype = "dashed",
+#                size = 0.4) +
+#   labs(title = "Courbe des débits journaliers classés",
+#        x = "Fréquence de dépassement",
+#        y = "Débit (l/s)") +
+#   scale_x_continuous(labels = scales::percent,
+#                      breaks = scales::breaks_pretty(n = 10)) +
+#   scale_y_continuous(labels = function(x) format(x,
+#                                                  big.mark = " ",
+#                                                  scientific = FALSE),
+#                      limits = c(0, NA),
+#                      breaks = scales::breaks_pretty(n = 10)) +
+#   templatesOFB::theme_ofb()
 ```
 
 
 ```{r}
-debits_classes %>% 
-  mutate_at(vars(q:IC.high), function(x) format(x,
-                                                big.mark = " ",
-                                                scientific = FALSE)) %>% 
-  # rename(`Débit` = q,
-  #        `Fréquence de non dépassement` = p,
-  #        `Borne inférieure de l'IC` = IC.low,
-  #        `Borne supérieurs de l'IC` = IC.high) %>% 
-DT::datatable(rownames = FALSE,
-              colnames = c("Fréquence de non dépassement",  "Débit", "Borne inférieure de l'IC", "Borne supérieure de l'IC"),
-              options = list(
-                columnDefs = list(list(className = 'dt-center', targets = 0:3))
-            )) %>% 
-  DT::formatPercentage(1, 2)
+# debits_classes %>% 
+#   mutate_at(vars(q:IC.high), function(x) format(x,
+#                                                 big.mark = " ",
+#                                                 scientific = FALSE)) %>% 
+#   # rename(`Débit` = q,
+#   #        `Fréquence de non dépassement` = p,
+#   #        `Borne inférieure de l'IC` = IC.low,
+#   #        `Borne supérieurs de l'IC` = IC.high) %>% 
+# DT::datatable(rownames = FALSE,
+#               colnames = c("Fréquence de non dépassement",  "Débit", "Borne inférieure de l'IC", "Borne supérieure de l'IC"),
+#               options = list(
+#                 columnDefs = list(list(className = 'dt-center', targets = 0:3))
+#             )) %>% 
+#   DT::formatPercentage(1, 2)
 ```
 
 # Basses eaux
@@ -386,6 +386,19 @@ module_api <- mean(q_moy_an$q_moy_an)
 Obtenu à partir des débits journaliers QmJ.
 
 
+## débits classés
+
+```{r}
+q_journaliers %>% pull(libelle_qualification) %>% table()
+
+q_journaliers %>% 
+  filter(libelle_qualification == "Bonne") %>% 
+  pull(resultat_obs_elab) %>% 
+  quantile(probs = c(0.05, 0.1, 0.2, 0.5, 0.8, 0.9, 0.95))
+
+prov <- get_stats_hydro(code = code_station,
+                        stat = "QJ_ANNUAL")
+```
 
 
 
