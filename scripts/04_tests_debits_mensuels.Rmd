@@ -1,0 +1,166 @@
+---
+title: "Essais Hydroportail"
+subtitle: "Débits mensuels"
+author: "OFB - DR Bretagne"
+date: "`r format(Sys.time(), 'Le %d %B %Y')`"
+output:
+  bookdown::html_document2:
+    fig_caption: yes
+    tab_caption: yes
+    number_sections: yes
+    global_numbering: yes
+    toc: yes
+    toc_float:
+      toc_collapsed: yes
+      toc_depth: 2
+    code_folding: hide
+    css: "style.css"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r}
+library(tidyverse)
+library(hydroportail)
+library(hubeau)
+library(flextable)
+
+source(file = "00_fonctions.R")
+```
+
+
+
+```{r}
+code_station_elle <- "J4712010"
+code_station_couesnon <- "J012151001"
+
+code_station <- code_station_elle
+```
+
+# collecte des débits caractéristiques
+
+```{r}
+metadata <- hydroportail::get_meta_hydro(code = code_station, df = TRUE)
+
+module <- get_module(code = code_station) 
+qmna5 <- get_qmna5(code = code_station)
+qmaqs <- get_qmaqs(code = code_station)
+
+```
+
+
+:::: {.colorbox data-latex=""}
+
+**Nom station : `r metadata$label`**
+
+**Code Hydroportail : `r metadata$code`**
+
+**Module : `r module %>% round() %>% formater_grand_nb()` l/s**
+
+**QMNA5 : `r qmna5 %>% round() %>% formater_grand_nb()` l/s**
+
+**Q moyen quinquennal sec : `r qmaqs %>% round() %>% formater_grand_nb()` l/s**
+
+::::
+
+$~$
+
+# Collecte des débits mensuels
+ 
+On utilise ici la fonction `get_stats_hydro()` du package {hydroportail}.
+
+```{r}
+# mois de début de l'année hydrologique
+mois_debut_annee_hydro <- hydroportail::get_stats_hydro(code = code_station,
+                                                        stat = "QMNA") %>%
+  .$meta %>% 
+  .$firsthydromonth %>% 
+  as.integer()
+
+# débits moyens mensuels
+QmM <- hydroportail::get_ts_hydro(code = code_station,
+                                  metric = "QmM") %>% # average monthly steamflow
+  mutate(
+    year = lubridate::year(t),
+    month = lubridate::month(t),
+    hydro_year = ifelse(month >= mois_debut_annee_hydro, # si besoin d'exclure des années hydro
+                        year + 1,
+                        year)
+  )
+```
+
+# Agrégation
+
+On calcule pour chaque mois (janvier, février, etc.) :
+
+- la moyenne interannuele des débits moyens mensuels
+- le débit moyen mensuel quinquennal sec
+
+
+```{r}
+# stats mensuelles
+stats_debit_mensuel <- QmM %>% 
+  group_by(month) %>% 
+  summarise(q20 = quantile(v, probs = 0.2),
+            qmoy = mean(v, na.rm = T))
+```
+
+# Graphique
+
+```{r}
+gg <- stats_debit_mensuel %>% 
+  pivot_longer(q20:qmoy) %>% 
+  mutate(name = ifelse(name == "q20",
+                       "Débit moyen mensuel quinquennal sec*",
+                       "Débit moyen mensuel interannuel")) %>% 
+  ggplot(aes(x = as.factor(month),
+             y = value,
+             fill = name)) +
+  geom_bar(stat = "identity",
+           position = "dodge") +
+  labs(x = "Mois",
+       y = "Débit en l/s",
+       fill = "",
+       caption = "*Quantile 20% non ajusté statistiquement") +
+  scale_y_continuous(labels = function(x) format(x,
+                                                 big.mark = " ",
+                                                 scientific = FALSE),
+                     sec.axis = sec_axis(~ ., breaks = unname(round(c(module, qmna5, qmaqs))))) +
+  scale_fill_manual(values = c("#56B4E9", "#E69F00")) +
+  templatesOFB::theme_ofb() +
+  theme(legend.position = "bottom") +
+  geom_hline(yintercept = module,
+             linetype = "dotted") +
+  geom_hline(yintercept = qmna5,
+             linetype = "dashed") +
+  geom_hline(yintercept = qmaqs,
+             linetype = "dotdash")
+  
+  
+
+gg
+```
+
+# Comparaison avec les données du site
+
+On compare les débits mensuels moyens calculés ici avec ceux diffusés sur le site Hydroportail.
+
+
+```{r}
+debits_mensuels_moy <- readxl::read_xlsx("../raw_data/2022_08_21_debits_mensuels_elle_couesnon.xlsx") %>% 
+  filter(station =="Ellé")
+
+comparaison <- stats_debit_mensuel %>% 
+  cbind(debits_mensuels_moy) %>% 
+  select(Mois = mois,
+         qmoy_par_package = qmoy,
+         qmoy_site_hydroportail = qmm) %>% 
+  mutate_all(round) %>% 
+  mutate_all(formater_grand_nb)
+
+comparaison %>% 
+  formater_flex()
+```
+
