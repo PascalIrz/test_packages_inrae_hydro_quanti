@@ -56,8 +56,8 @@ On extrait directement les q10 et q90 depuis les stats descriptives disponibles 
 qj_hydroportail <- get_stats_hydro(code = code_station,
                                    stat = "QJ_ANNUAL")
 
-q10_hydroportail <- qj_hydroportail$descriptivestats["q10"] %>% unlist()
-q90_hydroportail <- qj_hydroportail$descriptivestats["q90"] %>% unlist()
+q10_hydroportail <- qj_hydroportail$descriptivestats[["q10"]]
+q90_hydroportail <- qj_hydroportail$descriptivestats[["q90"]]
 
 q10_hydroportail
 q90_hydroportail
@@ -67,7 +67,14 @@ En revanche les q80 et q95 ne sont pas proposés.
 
 ## Données API Hydrométrie
 
-On charge donc les données de débits journaliers depuis l'API Hub'eau "Hydrométrie". Pour exclure d'éventuelles périodes qui ne sont pas qualifiées comme "Bonnes", on doit déterminer les années hydrologiques des observations. Le premier mois de l'année hydrologique est disponible dans les données déjà chargées avec le package `{hydroportail}`.
+On charge donc les données de débits journaliers depuis l'API Hub'eau "Hydrométrie". L'idée est de recalculer les quantiles sur le même jeu d'observations que l'hydroportail. 
+
+![](../assets/debits_classes_elle.PNG)
+
+On observe ce jour que 18 781 données ont servi à déterminer les quantiles, or, toujours au 25/08/2022, le tableau des débits journaliers chargés depuis l'API hydrométrie compte 19 424 données. Environ 650 observatiosn journalières ont donc été écartées avant de calcuper les quantiles.
+
+
+Pour exclure d'éventuelles périodes qui ne sont pas qualifiées comme "Bonnes", on doit déterminer les années hydrologiques des observations. Le premier mois de l'année hydrologique est disponible dans les données déjà chargées avec le package `{hydroportail}`, ainsi que la liste des années hydrologiques à exclure.
 
 
 ```{r}
@@ -75,6 +82,7 @@ mois_debut_annee_hydro <- qj_hydroportail$meta$firsthydromonth %>%
   as.integer()
 ```
 
+On charge les données, puis chaque pbservation journalière se voit attribuer une année hydrologique.
 
 ```{r}
 qj_hubeau <- hubeau::get_hydrometrie_obs_elab(
@@ -88,9 +96,23 @@ qj_hubeau <- hubeau::get_hydrometrie_obs_elab(
                                 annee))
 ```
 
+Les années hydrologiques à exclure des analyses peuvent l'être soit par des procédures automatiques (`qj_annual$meta$automaticallyexcludedseasons`), soit manuellement (`qj_annual$meta$manuallyexcludedseasons`).
 
 ```{r}
-qj_hubeau %>% pull(libelle_qualification) %>% table()
+annees_hydro_a_supprimer <- c(qj_annual$meta$automaticallyexcludedseasons,
+                              qj_annual$meta$manuallyexcludedseasons)
+```
+
+```{r}
+qj_hubeau_filtre <- qj_hubeau %>% 
+  filter(!annee_hydro %in% annees_hydro_a_supprimer)
+```
+
+
+
+```{r}
+qj_hubeau %>% pull(libelle_qualification) %>% table() %>% 
+  rbind(qj_hubeau_filtre %>% pull(libelle_qualification) %>% table())
 
 q_classes_hubeau <- qj_hubeau %>% 
   filter(libelle_qualification == "Bonne") %>% 
